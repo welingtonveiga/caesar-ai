@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "A personal AI agent that runs on your own machine and talks to you over Telegram."
 license = "MIT"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "python-dotenv>=1",
+    "python-telegram-bot>=21",
+    "pyyaml>=6",
+]
 
 [project.scripts]
 caesar = "caesar.cli:main"

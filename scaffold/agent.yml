@@ -1,0 +1,8 @@
+name: Caesar
+
+channels:
+  telegram:
+    token: ${TELEGRAM_BOT_TOKEN}
+    allowed_user_ids:
+      # Your numeric Telegram user ID (ask @userinfobot on Telegram).
+      - 123456789
