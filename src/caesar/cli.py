@@ -15,7 +15,8 @@ VERSION = version("caesar-ai")
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="caesar",
-        description="A personal AI agent that talks to you over Telegram.",
+        description="A personal AI agent that talks to you over a messaging "
+        "channel (e.g. Telegram).",
     )
     parser.add_argument("--version", action="version", version=f"caesar {VERSION}")
     subparsers = parser.add_subparsers(dest="command", required=True)

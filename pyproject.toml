@@ -1,7 +1,7 @@
 [project]
 name = "caesar-ai"
 version = "0.1.0"
-description = "A personal AI agent that runs on your own machine and talks to you over Telegram."
+description = "A personal AI agent that runs on your own machine and talks to you over a messaging channel (e.g. Telegram)."
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [

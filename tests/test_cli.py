@@ -22,15 +22,13 @@ def test_run_with_missing_agent_yml_fails_with_clear_error(tmp_path):
     assert "agent.yml" in result.stderr
 
 
-def test_run_with_incomplete_config_fails_with_clear_error(tmp_path):
-    (tmp_path / "agent.yml").write_text(
-        "channels:\n  telegram:\n    token: 123:secret\n"
-    )
+def test_run_with_no_channel_configured_fails_with_clear_error(tmp_path):
+    (tmp_path / "agent.yml").write_text("name: Testus\n")
 
     result = run_cli("run", str(tmp_path))
 
     assert result.returncode != 0
-    assert "allowed_user_ids" in result.stderr
+    assert "No supported channel" in result.stderr
 
 
 def test_version_flag_reports_package_version():

@@ -1,1 +1,1 @@
-"""Caesar: a personal AI agent that talks to you over Telegram."""
+"""Caesar: a personal AI agent reachable over a messaging channel (e.g. Telegram)."""

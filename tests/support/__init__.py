@@ -1,1 +1,1 @@
-"""Shared test support: fakes for Telegram, LLM, and sandbox live here."""
+"""Shared test support: fakes for channels (e.g. Telegram), LLM, and sandbox."""
