@@ -1,0 +1,39 @@
+[project]
+name = "caesar-ai"
+version = "0.1.0"
+description = "A personal AI agent that runs on your own machine and talks to you over Telegram."
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+caesar = "caesar.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.9",
+]
+
+[build-system]
+requires = ["uv_build>=0.9,<0.10"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "caesar"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
