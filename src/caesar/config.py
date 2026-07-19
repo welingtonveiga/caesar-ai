@@ -18,15 +18,9 @@ class ConfigError(Exception):
 
 
 @dataclass(frozen=True)
-class TelegramConfig:
-    token: str
-    allowed_user_ids: list[int]
-
-
-@dataclass(frozen=True)
 class AgentConfig:
     name: str
-    telegram: TelegramConfig
+    channels: dict
 
 
 def resolve_agent_dir(cli_arg: str | None) -> Path:
@@ -57,10 +51,11 @@ def load_agent_config(agent_dir: Path) -> AgentConfig:
         raise ConfigError(f"{config_path} must be a YAML mapping.")
     raw = _interpolate(raw, env, config_path)
 
-    return AgentConfig(
-        name=raw.get("name", DEFAULT_AGENT_NAME),
-        telegram=_parse_telegram(raw, config_path),
-    )
+    channels = raw.get("channels") or {}
+    if not isinstance(channels, dict):
+        raise ConfigError(f"{config_path}: 'channels' must be a mapping.")
+
+    return AgentConfig(name=raw.get("name", DEFAULT_AGENT_NAME), channels=channels)
 
 
 def _load_env(agent_dir: Path) -> dict[str, str]:
@@ -94,31 +89,3 @@ def _interpolate(value: object, env: dict[str, str], config_path: Path) -> objec
     if isinstance(value, list):
         return [_interpolate(item, env, config_path) for item in value]
     return value
-
-
-def _parse_telegram(raw: dict, config_path: Path) -> TelegramConfig:
-    channels = raw.get("channels") or {}
-    telegram = channels.get("telegram") or {}
-    if not isinstance(telegram, dict):
-        raise ConfigError(f"{config_path}: 'channels.telegram' must be a mapping.")
-
-    token = telegram.get("token")
-    if not token or not isinstance(token, str):
-        raise ConfigError(
-            f"{config_path}: 'channels.telegram.token' is required — set it to "
-            "${TELEGRAM_BOT_TOKEN} and define the variable in the agent's .env."
-        )
-
-    allowed = telegram.get("allowed_user_ids")
-    if not allowed or not isinstance(allowed, list):
-        raise ConfigError(
-            f"{config_path}: 'channels.telegram.allowed_user_ids' is required — "
-            "list the Telegram user IDs allowed to talk to this agent."
-        )
-    if not all(isinstance(user_id, int) for user_id in allowed):
-        raise ConfigError(
-            f"{config_path}: 'channels.telegram.allowed_user_ids' must be a list "
-            "of integer Telegram user IDs."
-        )
-
-    return TelegramConfig(token=token, allowed_user_ids=allowed)

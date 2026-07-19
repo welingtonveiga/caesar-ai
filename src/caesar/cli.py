@@ -6,9 +6,8 @@ import logging
 import sys
 from importlib.metadata import version
 
-from caesar.channel import ChannelError, TelegramChannel
+from caesar.channel import ChannelError, create_channel
 from caesar.config import ConfigError, load_agent_config, resolve_agent_dir
-from caesar.telegram import PollingTelegramTransport
 
 VERSION = version("caesar-ai")
 
@@ -39,9 +38,8 @@ def main() -> int:
     try:
         agent_dir = resolve_agent_dir(args.agent_dir)
         config = load_agent_config(agent_dir)
-        transport = PollingTelegramTransport(config.telegram.token)
-        channel = TelegramChannel(transport, config.telegram.allowed_user_ids)
-        print(f"{config.name} is listening on Telegram. Press Ctrl-C to stop.")
+        channel = create_channel(config.channels)
+        print(f"{config.name} is listening. Press Ctrl-C to stop.")
         asyncio.run(channel.start())
     except (ConfigError, ChannelError) as error:
         print(f"caesar: {error}", file=sys.stderr)

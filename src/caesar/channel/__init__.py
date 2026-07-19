@@ -1,4 +1,4 @@
-"""Channel adapter seam: reply logic independent of the wire transport."""
+"""Channel adapter seam: transports deliver messages, the channel decides replies."""
 
 import logging
 from collections.abc import Awaitable, Callable, Sequence
@@ -25,14 +25,14 @@ type MessageHandler = Callable[[IncomingMessage], Awaitable[None]]
 
 
 class Transport(Protocol):
-    """Wire-level message delivery; the Telegram implementation lives behind it."""
+    """Wire-level message delivery; platform implementations live in subpackages."""
 
     async def start(self, handler: MessageHandler) -> None: ...
 
     async def send(self, chat_id: int, text: str) -> None: ...
 
 
-class TelegramChannel:
+class Channel:
     """Replies with a constant message to allowlisted senders; drops the rest."""
 
     def __init__(self, transport: Transport, allowed_user_ids: Sequence[int]) -> None:
@@ -41,9 +41,7 @@ class TelegramChannel:
 
     async def start(self) -> None:
         if not self._allowed:
-            raise ChannelError(
-                "Refusing to start: the Telegram user-ID allowlist is empty."
-            )
+            raise ChannelError("Refusing to start: the user-ID allowlist is empty.")
         await self._transport.start(self._on_message)
 
     async def _on_message(self, message: IncomingMessage) -> None:
@@ -53,3 +51,15 @@ class TelegramChannel:
             )
             return
         await self._transport.send(message.chat_id, CONSTANT_REPLY)
+
+
+def create_channel(channels_config: dict) -> Channel:
+    """Build the channel configured under agent.yml's 'channels' section."""
+    if "telegram" in channels_config:
+        from caesar.channel import telegram
+
+        return telegram.create_channel(channels_config["telegram"])
+    raise ChannelError(
+        "No supported channel configured — agent.yml needs a "
+        "'channels.telegram' section."
+    )

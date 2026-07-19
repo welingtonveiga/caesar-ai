@@ -5,14 +5,14 @@ import logging
 
 import pytest
 
-from caesar.channel import ChannelError, IncomingMessage, TelegramChannel
+from caesar.channel import Channel, ChannelError, IncomingMessage, create_channel
 from tests.support.fake_transport import FakeTransport
 
 OWNER_ID = 1111
 
 
-def make_channel(transport: FakeTransport) -> TelegramChannel:
-    return TelegramChannel(transport, allowed_user_ids=[OWNER_ID])
+def make_channel(transport: FakeTransport) -> Channel:
+    return Channel(transport, allowed_user_ids=[OWNER_ID])
 
 
 def test_allowlisted_sender_gets_constant_reply():
@@ -50,7 +50,7 @@ def test_non_allowlisted_sender_gets_no_reply_and_drop_is_logged(caplog):
 def test_channel_refuses_to_start_without_allowlist():
     async def scenario():
         transport = FakeTransport()
-        channel = TelegramChannel(transport, allowed_user_ids=[])
+        channel = Channel(transport, allowed_user_ids=[])
 
         with pytest.raises(ChannelError, match="allowlist"):
             await channel.start()
@@ -58,3 +58,8 @@ def test_channel_refuses_to_start_without_allowlist():
         assert not transport.started
 
     asyncio.run(scenario())
+
+
+def test_create_channel_without_supported_channel_fails():
+    with pytest.raises(ChannelError, match="No supported channel"):
+        create_channel({})
