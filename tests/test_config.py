@@ -1,5 +1,6 @@
 """Config loading tests: agent.yml + .env in an agent directory."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,57 @@ def test_loads_config_interpolating_env_vars_from_dotenv(tmp_path):
 
     assert config.name == "Testus"
     assert config.channels == {"demo": {"token": "123:secret-token"}}
+
+
+def test_loads_dotenv_values_for_model_providers(tmp_path, monkeypatch):
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    agent_dir = write_agent_dir(
+        tmp_path,
+        "name: Testus\n",
+        env="GOOGLE_API_KEY=google-ai-studio-key\n",
+    )
+
+    load_agent_config(agent_dir)
+
+    assert os.environ["GOOGLE_API_KEY"] == "google-ai-studio-key"
+
+
+def test_loads_model_and_optional_model_params(tmp_path):
+    agent_dir = write_agent_dir(
+        tmp_path,
+        """\
+    model:
+      model_name: openai:gpt-5
+      temperature: 0.2
+      max_tokens: 400
+""",
+    )
+
+    config = load_agent_config(agent_dir)
+
+    assert config.model == "openai:gpt-5"
+    assert config.model_params == {"temperature": 0.2, "max_tokens": 400}
+
+
+def test_defaults_to_gemini_model(tmp_path):
+    config = load_agent_config(write_agent_dir(tmp_path, "name: Testus\n"))
+
+    assert config.model == "google_genai:gemini-3.1-flash-lite"
+
+
+def test_rejects_inline_telegram_allowlist(tmp_path):
+    agent_dir = write_agent_dir(
+        tmp_path,
+        """\
+channels:
+  telegram:
+    token: demo-token
+    allowed_user_ids: [1111]
+""",
+    )
+
+    with pytest.raises(ConfigError, match="environment variable"):
+        load_agent_config(agent_dir)
 
 
 def test_unset_variable_reference_fails_with_clear_error(tmp_path, monkeypatch):

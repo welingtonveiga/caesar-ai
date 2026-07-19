@@ -4,11 +4,13 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import yaml
-from dotenv import dotenv_values
+from dotenv import dotenv_values, load_dotenv
 
 DEFAULT_AGENT_NAME = "Caesar"
+DEFAULT_MODEL = "google_genai:gemini-3.1-flash-lite"
 
 _VAR_PATTERN = re.compile(r"\$\{(?P<name>[A-Za-z_][A-Za-z0-9_]*)\}")
 
@@ -20,6 +22,8 @@ class ConfigError(Exception):
 @dataclass(frozen=True)
 class AgentConfig:
     name: str
+    model: str
+    model_params: dict[str, float | int]
     channels: dict
 
 
@@ -49,24 +53,75 @@ def load_agent_config(agent_dir: Path) -> AgentConfig:
     raw = yaml.safe_load(config_path.read_text())
     if not isinstance(raw, dict):
         raise ConfigError(f"{config_path} must be a YAML mapping.")
-    raw = _interpolate(raw, env, config_path)
+    raw = cast(dict[str, object], raw)
+    _validate_allowlist_reference(raw, config_path)
+    raw = cast(dict[str, object], _interpolate(raw, env, config_path))
 
     channels = raw.get("channels") or {}
     if not isinstance(channels, dict):
         raise ConfigError(f"{config_path}: 'channels' must be a mapping.")
 
-    return AgentConfig(name=raw.get("name", DEFAULT_AGENT_NAME), channels=channels)
+    raw_model = raw.get("model")
+    if raw_model is None:
+        model = DEFAULT_MODEL
+        model_config: dict[str, object] = {}
+    elif not isinstance(raw_model, dict):
+        raise ConfigError(f"{config_path}: 'model' must be a mapping.")
+    else:
+        model_config = cast(dict[str, object], raw_model)
+        model = model_config.get("model_name")
+        if not isinstance(model, str) or not model:
+            raise ConfigError(
+                f"{config_path}: 'model.model_name' must be a non-empty string."
+            )
+
+    name = raw.get("name", DEFAULT_AGENT_NAME)
+    if not isinstance(name, str) or not name:
+        raise ConfigError(f"{config_path}: 'name' must be a non-empty string.")
+
+    model_params: dict[str, float | int] = {}
+    for param_name in ("temperature", "max_tokens"):
+        if param_name not in model_config:
+            continue
+        value = model_config[param_name]
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise ConfigError(f"{config_path}: model parameters must be numbers.")
+        model_params[param_name] = value
+
+    return AgentConfig(
+        name=name,
+        model=model,
+        model_params=model_params,
+        channels=channels,
+    )
 
 
 def _load_env(agent_dir: Path) -> dict[str, str]:
     """Auto-load .env from the agent dir; real environment variables win."""
     env_path = agent_dir / ".env"
+    load_dotenv(env_path, override=False)
     dotenv = {
         key: value
         for key, value in dotenv_values(env_path).items()
         if value is not None
     }
     return {**dotenv, **os.environ}
+
+
+def _validate_allowlist_reference(raw: dict[str, object], config_path: Path) -> None:
+    channels = raw.get("channels")
+    if not isinstance(channels, dict):
+        return
+    telegram = channels.get("telegram")
+    if not isinstance(telegram, dict) or "allowed_user_ids" not in telegram:
+        return
+    telegram = cast(dict[str, object], telegram)
+    allowed = telegram["allowed_user_ids"]
+    if not isinstance(allowed, str) or _VAR_PATTERN.fullmatch(allowed) is None:
+        raise ConfigError(
+            f"{config_path}: 'channels.telegram.allowed_user_ids' must reference "
+            "an environment variable."
+        )
 
 
 def _interpolate(value: object, env: dict[str, str], config_path: Path) -> object:

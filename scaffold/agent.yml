@@ -1,8 +1,10 @@
 name: Caesar
+model:
+  model_name: google_genai:gemini-3.1-flash-lite
+  temperature: 0.2
+  max_tokens: 1024
 
 channels:
   telegram:
     token: ${TELEGRAM_BOT_TOKEN}
-    allowed_user_ids:
-      # Your numeric Telegram user ID (ask @userinfobot on Telegram).
-      - 123456789
+    allowed_user_ids: ${TELEGRAM_ALLOWED_USER_IDS}

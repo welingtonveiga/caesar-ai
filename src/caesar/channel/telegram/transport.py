@@ -31,13 +31,16 @@ class PollingTelegramTransport:
         self._app.add_handler(
             MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, on_update)
         )
+        updater = self._app.updater
+        if updater is None:
+            raise RuntimeError("Telegram application has no updater.")
         async with self._app:
             await self._app.start()
-            await self._app.updater.start_polling()
+            await updater.start_polling()
             try:
                 await asyncio.Event().wait()
             finally:
-                await self._app.updater.stop()
+                await updater.stop()
                 await self._app.stop()
 
     async def send(self, chat_id: int, text: str) -> None:

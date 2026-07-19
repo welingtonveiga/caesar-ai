@@ -24,6 +24,7 @@ def test_run_with_missing_agent_yml_fails_with_clear_error(tmp_path):
 
 def test_run_with_no_channel_configured_fails_with_clear_error(tmp_path):
     (tmp_path / "agent.yml").write_text("name: Testus\n")
+    (tmp_path / "soul.md").write_text("Be helpful.\n")
 
     result = run_cli("run", str(tmp_path))
 

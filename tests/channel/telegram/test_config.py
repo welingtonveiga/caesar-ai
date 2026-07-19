@@ -27,9 +27,18 @@ def test_missing_allowlist_fails_with_clear_error():
         parse_config({"token": "123:secret-token"})
 
 
+def test_comma_separated_allowlist_parses_from_environment_value():
+    config = parse_config(
+        {"token": "123:secret-token", "allowed_user_ids": "1111, 2222"}
+    )
+
+    assert config.allowed_user_ids == [1111, 2222]
+
+
 def test_scaffold_agent_dir_loads_once_token_is_set(monkeypatch):
     scaffold = Path(__file__).parents[3] / "scaffold"
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:demo-token")
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", "1111")
 
     agent_config = load_agent_config(scaffold)
     telegram_config = parse_config(agent_config.channels["telegram"])

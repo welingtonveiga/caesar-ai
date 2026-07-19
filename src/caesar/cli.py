@@ -6,6 +6,7 @@ import logging
 import sys
 from importlib.metadata import version
 
+from caesar.brain import create_brain
 from caesar.channel import ChannelError, create_channel
 from caesar.config import ConfigError, load_agent_config, resolve_agent_dir
 
@@ -35,11 +36,14 @@ def main() -> int:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
     )
+    # Telegram request URLs contain the bot token; keep HTTP client logs quiet.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     try:
         agent_dir = resolve_agent_dir(args.agent_dir)
         config = load_agent_config(agent_dir)
-        channel = create_channel(config.channels)
+        brain = create_brain(config, agent_dir)
+        channel = create_channel(config.channels, brain.reply)
         print(f"{config.name} is listening. Press Ctrl-C to stop.")
         asyncio.run(channel.start())
     except (ConfigError, ChannelError) as error:

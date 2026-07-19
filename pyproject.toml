@@ -5,6 +5,9 @@ description = "A personal AI agent that runs on your own machine and talks to yo
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
+    "langchain>=1",
+    "langchain-google-genai>=4",
+    "langchain-openai>=1",
     "python-dotenv>=1",
     "python-telegram-bot>=21",
     "pyyaml>=6",

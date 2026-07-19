@@ -1,6 +1,7 @@
 """Parsing and validation of the 'channels.telegram' config section."""
 
 from dataclasses import dataclass
+from typing import cast
 
 from caesar.config import ConfigError
 
@@ -23,6 +24,14 @@ def parse_config(raw: object) -> TelegramConfig:
         )
 
     allowed = raw.get("allowed_user_ids")
+    if isinstance(allowed, str):
+        try:
+            allowed = [int(user_id.strip()) for user_id in allowed.split(",")]
+        except ValueError as error:
+            raise ConfigError(
+                "'channels.telegram.allowed_user_ids' must be a comma-separated "
+                "list of integer Telegram user IDs."
+            ) from error
     if not allowed or not isinstance(allowed, list):
         raise ConfigError(
             "'channels.telegram.allowed_user_ids' is required — list the "
@@ -34,4 +43,4 @@ def parse_config(raw: object) -> TelegramConfig:
             "Telegram user IDs."
         )
 
-    return TelegramConfig(token=token, allowed_user_ids=allowed)
+    return TelegramConfig(token=token, allowed_user_ids=cast(list[int], allowed))

@@ -4,10 +4,10 @@
 
 **Blocked by:** 02 — Telegram constant-reply bot.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Each incoming allowlisted message produces an LLM-generated reply on Telegram
-- [ ] Model + optional params (temperature, max_tokens) configured in `agent.yml`; changing provider is a one-line YAML change
-- [ ] `soul.md` is loaded from the agent dir and wrapped in engine-owned system-prompt scaffolding; a default dry-witted "Caesar" soul ships in the scaffold agent dir
-- [ ] Missing/failed LLM call produces a graceful error reply, not a crash
-- [ ] Tests run with a fake chat model (no network, no API key) asserting prompt composition (scaffold + soul) and reply flow end-to-end through the fake transport
+- [x] Each incoming allowlisted message produces an LLM-generated reply on Telegram
+- [x] Model + optional params (temperature, max_tokens) configured in `agent.yml`; changing provider is a one-line YAML change
+- [x] `soul.md` is loaded from the agent dir and wrapped in engine-owned system-prompt scaffolding; a default dry-witted "Caesar" soul ships in the scaffold agent dir
+- [x] Missing/failed LLM call produces a graceful error reply, not a crash
+- [x] Tests run with a fake chat model (no network, no API key) asserting prompt composition (scaffold + soul) and reply flow end-to-end through the fake transport

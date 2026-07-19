@@ -11,11 +11,15 @@ from tests.support.fake_transport import FakeTransport
 OWNER_ID = 1111
 
 
+async def reply(_: str) -> str:
+    return "Ave! Caesar is alive."
+
+
 def make_channel(transport: FakeTransport) -> Channel:
-    return Channel(transport, allowed_user_ids=[OWNER_ID])
+    return Channel(transport, allowed_user_ids=[OWNER_ID], reply=reply)
 
 
-def test_allowlisted_sender_gets_constant_reply():
+def test_allowlisted_sender_gets_injected_reply():
     async def scenario():
         transport = FakeTransport()
         channel = make_channel(transport)
@@ -50,7 +54,8 @@ def test_non_allowlisted_sender_gets_no_reply_and_drop_is_logged(caplog):
 def test_channel_refuses_to_start_without_allowlist():
     async def scenario():
         transport = FakeTransport()
-        channel = Channel(transport, allowed_user_ids=[])
+
+        channel = Channel(transport, allowed_user_ids=[], reply=reply)
 
         with pytest.raises(ChannelError, match="allowlist"):
             await channel.start()
@@ -62,4 +67,4 @@ def test_channel_refuses_to_start_without_allowlist():
 
 def test_create_channel_without_supported_channel_fails():
     with pytest.raises(ChannelError, match="No supported channel"):
-        create_channel({})
+        create_channel({}, reply)

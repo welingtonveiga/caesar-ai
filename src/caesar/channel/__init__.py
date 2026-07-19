@@ -22,6 +22,7 @@ class IncomingMessage:
 
 
 type MessageHandler = Callable[[IncomingMessage], Awaitable[None]]
+type Reply = Callable[[str], Awaitable[str]]
 
 
 class Transport(Protocol):
@@ -33,11 +34,17 @@ class Transport(Protocol):
 
 
 class Channel:
-    """Replies with a constant message to allowlisted senders; drops the rest."""
+    """Routes allowlisted messages to the brain; silently drops the rest."""
 
-    def __init__(self, transport: Transport, allowed_user_ids: Sequence[int]) -> None:
+    def __init__(
+        self,
+        transport: Transport,
+        allowed_user_ids: Sequence[int],
+        reply: Reply,
+    ) -> None:
         self._transport = transport
         self._allowed = frozenset(allowed_user_ids)
+        self._reply = reply
 
     async def start(self) -> None:
         if not self._allowed:
@@ -50,15 +57,15 @@ class Channel:
                 "Dropping message from non-allowlisted user %s", message.sender_id
             )
             return
-        await self._transport.send(message.chat_id, CONSTANT_REPLY)
+        await self._transport.send(message.chat_id, await self._reply(message.text))
 
 
-def create_channel(channels_config: dict) -> Channel:
+def create_channel(channels_config: dict, reply: Reply) -> Channel:
     """Build the channel configured under agent.yml's 'channels' section."""
     if "telegram" in channels_config:
         from caesar.channel import telegram
 
-        return telegram.create_channel(channels_config["telegram"])
+        return telegram.create_channel(channels_config["telegram"], reply)
     raise ChannelError(
         "No supported channel configured — agent.yml needs a "
         "'channels.telegram' section."
