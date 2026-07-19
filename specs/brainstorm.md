@@ -33,10 +33,10 @@ Caesar is a personal AI agent that you can install locally or in a box in the cl
     - Memory: the mechanism to recover context, record important facts, and remember the user.
 - As it is installed as a single dependency, initially it will depend on a database that can be installed with it: SQLite.
 - It will save its own memory in a subfolder.
-- It always creates a short task name/ID for requests.
+- It promotes a request to a task (with a short task name/ID) only when the request involves sandbox execution, multi-step tool work, or will outlive a single reply; casual chat stays inline in the conversation.
 - For ongoing tasks, it can use the subfolder workspace/<task_short_name>/ to save temporary files. 
 - Code execution (within a task context):
-    - It runs in ephemeral containers based on Python images with access only to pip to install dependencies, and no other access to the internet or local ports.
+    - It runs in ephemeral containers based on a prebaked Python image with common packages preinstalled (pandas, numpy, openpyxl, etc.) and networking fully disabled — no internet, no local ports, no runtime pip installs. Missing packages fail gracefully and get added to the image.
     - The input folder (`in/`) is mounted explicitly as **Read-Only (`ro`)**, meaning code can never corrupt or delete seed files. The output directory (`out/`) is mounted as **Read-Write (`rw`)** to intercept target assets. 
 
 ## Caesar Memory
@@ -45,20 +45,20 @@ Caesar is a personal AI agent that you can install locally or in a box in the cl
 
 ## Tool Classification & Execution Governance
 
-To maximize the tool's utility while enforcing safety boundaries, tools are organized into strict operational tiers governed by physical infrastructure barriers and dynamic software logic.
+To maximize the tool's utility while enforcing safety boundaries, tools are organized into strict operational tiers classified by **blast radius (reversibility)**, not locality, governed by physical infrastructure barriers and dynamic software logic.
 
 ### Operational Tier Mapping
 
 | Tier | Category | Operational Examples | Execution Policy |
 | :--- | :--- | :--- | :--- |
-| **Tier 1** | Local Read-Only | Local file system reads, reading knowledge graphs, scanning workspace structure. | **Autonomous (Implicit):** Fired immediately with zero user friction. |
-| **Tier 2** | Local Untrusted Execution | Running generated Python or Node.js scripts to transform data, parse sheets, or convert file types. | **Autonomous Sandbox:** Fired inside an isolated, unprivileged container. |
-| **Tier 3** | External Mutation | Dispatching emails, firing communication webhooks, executing host-level destructive operations. | **Strict Interruption:** Requires human approval via state breakpoints. |
+| **Tier 1** | Reads & Internal Writes | All reads — local file system, web fetch/search, knowledge graphs, workspace structure — plus writes strictly inside Caesar's own folders (workspace/, filesystem/). | **Autonomous (Implicit):** Fired immediately with zero user friction. |
+| **Tier 2** | Untrusted Execution | Running generated Python scripts to transform data, parse sheets, or convert file types. | **Autonomous Sandbox:** Fired inside an isolated, unprivileged container. |
+| **Tier 3** | External Mutation | Anything that mutates the world outside Caesar's folders: dispatching emails, firing communication webhooks, writes to other host folders, deletes, host-level destructive operations. | **Strict Interruption:** Requires human approval via state breakpoints. |
 
 ### Sandboxed Code Execution (Tier 2)
 Code generation and processing are isolated using a **Docker Workspace Pattern**:
 * **Data Boundaries:** The Gateway mounts specific directories onto the ephemeral container. The input folder (`in/`) is mounted explicitly as **Read-Only (`ro`)**, meaning code can never corrupt or delete seed files. The output directory (`out/`) is mounted as **Read-Write (`rw`)** to intercept target assets.
-* **Network Isolation:** Containers operate under restricted bridge network rules, explicitly limiting outbound connections exclusively to package registries (e.g., PyPI, NPM) solely for installing dependencies on-demand. General internet surfing or internal host-network sniffing is blocked.
+* **Network Isolation:** Containers run with networking fully disabled — no outbound connections at all. Dependencies come preinstalled in a prebaked, pinned image instead of on-demand installs (container runtimes cannot enforce a registry-only allowlist on their own, and runtime installs execute untrusted build hooks with network access). If code needs a missing package, the run fails gracefully and the package gets added to the image.
 
 ### Human-In-The-Loop (HITL) Firewalls (Tier 3)
 When the LangGraph state engine encounters a Tier 3 tool payload emitted by the LLM:
