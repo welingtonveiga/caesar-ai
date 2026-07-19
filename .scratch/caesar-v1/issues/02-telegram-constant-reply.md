@@ -4,11 +4,11 @@
 
 **Blocked by:** 01 — Project scaffold + agent-ready test harness.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `caesar run <dir>` starts, connects to Telegram via long polling (python-telegram-bot v21+), and replies to allowlisted users with a constant message
-- [ ] `agent.yml` supports at minimum: name, telegram bot token via `${VAR}`, allowed user IDs; `.env` in the agent dir is auto-loaded
-- [ ] Startup fails with a clear error when the token or allowlist is absent
-- [ ] Non-allowlisted senders get no reply; the drop is logged
-- [ ] The Telegram transport sits behind a channel-adapter seam; tests drive message-in/message-out through a fake transport with no network
-- [ ] A scaffold agent directory (agent.yml + .env.example) exists so the phone demo is reproducible
+- [x] `caesar run <dir>` starts, connects to Telegram via long polling (python-telegram-bot v21+), and replies to allowlisted users with a constant message
+- [x] `agent.yml` supports at minimum: name, telegram bot token via `${VAR}`, allowed user IDs; `.env` in the agent dir is auto-loaded
+- [x] Startup fails with a clear error when the token or allowlist is absent
+- [x] Non-allowlisted senders get no reply; the drop is logged
+- [x] The Telegram transport sits behind a channel-adapter seam; tests drive message-in/message-out through a fake transport with no network
+- [x] A scaffold agent directory (agent.yml + .env.example) exists so the phone demo is reproducible
