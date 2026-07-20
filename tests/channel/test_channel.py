@@ -11,7 +11,7 @@ from tests.support.fake_transport import FakeTransport
 OWNER_ID = 1111
 
 
-async def reply(_: str) -> str:
+async def reply(_: str, __: int) -> str:
     return "Ave! Caesar is alive."
 
 

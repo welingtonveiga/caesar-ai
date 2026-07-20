@@ -22,7 +22,7 @@ class IncomingMessage:
 
 
 type MessageHandler = Callable[[IncomingMessage], Awaitable[None]]
-type Reply = Callable[[str], Awaitable[str]]
+type Reply = Callable[[str, int], Awaitable[str]]
 
 
 class Transport(Protocol):
@@ -57,7 +57,9 @@ class Channel:
                 "Dropping message from non-allowlisted user %s", message.sender_id
             )
             return
-        await self._transport.send(message.chat_id, await self._reply(message.text))
+        await self._transport.send(
+            message.chat_id, await self._reply(message.text, message.chat_id)
+        )
 
 
 def create_channel(channels_config: dict, reply: Reply) -> Channel:

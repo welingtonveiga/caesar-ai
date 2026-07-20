@@ -8,6 +8,7 @@ dependencies = [
     "langchain>=1",
     "langchain-google-genai>=4",
     "langchain-openai>=1",
+    "langgraph-checkpoint-sqlite>=3",
     "python-dotenv>=1",
     "python-telegram-bot>=21",
     "pyyaml>=6",

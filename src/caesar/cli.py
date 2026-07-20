@@ -6,8 +6,8 @@ import logging
 import sys
 from importlib.metadata import version
 
-from caesar.brain import create_brain
-from caesar.channel import ChannelError, create_channel
+from caesar.brain import Brain, create_brain
+from caesar.channel import Channel, ChannelError, create_channel
 from caesar.config import ConfigError, load_agent_config, resolve_agent_dir
 
 VERSION = version("caesar-ai")
@@ -45,10 +45,17 @@ def main() -> int:
         brain = create_brain(config, agent_dir)
         channel = create_channel(config.channels, brain.reply)
         print(f"{config.name} is listening. Press Ctrl-C to stop.")
-        asyncio.run(channel.start())
+        asyncio.run(_run_agent(channel, brain))
     except (ConfigError, ChannelError) as error:
         print(f"caesar: {error}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("Vale! Caesar stopped.")
     return 0
+
+
+async def _run_agent(channel: Channel, brain: Brain) -> None:
+    try:
+        await channel.start()
+    finally:
+        await brain.close()
