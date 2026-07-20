@@ -2,6 +2,10 @@
 
 Caesar is a personal AI agent that you can install locally or in a box in the cloud.
 
+## Inspiration
+
+Caesar AI takes its name from Caesar, the legendary leader in the *Planet of the Apes* saga, not the Roman general. The project draws inspiration from his resilience, ethical restraint, strategic judgment, and commitment to long-term stability. Caesar aims to be a capable but principled guardian and coordinator: adaptive to context, decisive when needed, and never reckless in its execution.
+
 ## How to create an agent
 - You configure your agent based on an agent.yml file in a dedicated folder. The file defines:
     - The name of the agent, default: Caesar
