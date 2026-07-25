@@ -6,8 +6,8 @@
 
 **Status:** ready-for-agent
 
-- [ ] Brain is a hand-built `StateGraph` (not `create_react_agent`) invoked via `ainvoke`
-- [ ] SQLite checkpointer stores thread state in `memory/current.db` inside the agent directory; one thread per chat
-- [ ] A follow-up message referencing the previous exchange is answered correctly (verified with the fake chat model)
-- [ ] After a process restart, the conversation thread resumes — verified by an automated test that rebuilds the app against the same db file
-- [ ] Conversation history is bounded (trim or summarize) so long chats cannot grow the prompt unboundedly
+- [X] Brain is a hand-built `StateGraph` (not `create_react_agent`) invoked via `ainvoke`
+- [X] SQLite checkpointer stores thread state in `memory/current.db` inside the agent directory; one thread per chat
+- [X] A follow-up message referencing the previous exchange is answered correctly (verified with the fake chat model)
+- [X] After a process restart, the conversation thread resumes — verified by an automated test that rebuilds the app against the same db file
+- [X] Conversation history is bounded (trim or summarize) so long chats cannot grow the prompt unboundedly
