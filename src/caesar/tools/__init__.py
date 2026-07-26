@@ -1,16 +1,14 @@
 """Built-in tool registry and public types."""
 
-from caesar.tools.registry import execute_tool, list_tools
-from caesar.tools.types import Tier, ToolContext, ToolDefinition, Toolset, WebClient
-from caesar.tools.web_access import DefaultWebClient
+from caesar.tools.registry import list_tools
+from caesar.tools.types import Tier, Tool, ToolContext, Toolset
+from caesar.tools.web_access import WebAccessToolset
 
 __all__ = [
-    "DefaultWebClient",
     "Tier",
+    "Tool",
     "ToolContext",
-    "ToolDefinition",
     "Toolset",
-    "WebClient",
-    "execute_tool",
+    "WebAccessToolset",
     "list_tools",
 ]

@@ -21,11 +21,9 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 
 from caesar.config import AgentConfig, ConfigError
 from caesar.tools import (
-    DefaultWebClient,
     Tier,
+    Tool,
     ToolContext,
-    WebClient,
-    execute_tool,
     list_tools,
 )
 
@@ -56,23 +54,11 @@ class Brain:
         soul: str,
         model_builder: ModelBuilder | None = None,
         database: Path | str = ":memory:",
-        agent_dir: Path | None = None,
-        folders: Sequence[Path] = (),
-        web_client: WebClient | None = None,
+        tools: Sequence[Tool] = (),
     ) -> None:
         self._model = model
         self._model_builder = model_builder
         self._database = str(database)
-        self._agent_dir = agent_dir or Path.cwd()
-        self._folders = tuple(folders)
-        self._web_client = web_client or DefaultWebClient()
-        tools = list_tools(
-            ToolContext(
-                agent_dir=self._agent_dir,
-                folders=self._folders,
-                web_client=self._web_client,
-            )
-        )
         self._tools = {tool.name: tool for tool in tools}
         self._tools_bound = False
         self._graph: Any | None = None
@@ -174,7 +160,7 @@ class Brain:
         results: list[ToolMessage] = []
         for call in response.tool_calls:
             tool = self._tools[call["name"]]
-            result = execute_tool(tool, call["args"])
+            result = tool.execute(**call["args"])
             results.append(
                 ToolMessage(
                     content=result,
@@ -226,6 +212,10 @@ def create_brain(
         soul_path.read_text(),
         model_builder=build_model,
         database=memory_dir / "current.db",
-        agent_dir=agent_dir,
-        folders=config.folders,
+        tools=list_tools(
+            ToolContext(
+                agent_dir=agent_dir,
+                folders=config.folders,
+            )
+        ),
     )

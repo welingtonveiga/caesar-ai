@@ -7,9 +7,9 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from caesar.brain import Brain, create_brain
 from caesar.channel import Channel, IncomingMessage
 from caesar.config import AgentConfig
+from caesar.tools import Tier, Tool
 from tests.support.fake_chat_model import FakeChatModel
 from tests.support.fake_transport import FakeTransport
-from tests.support.fake_web_client import FakeWebClient
 
 OWNER_ID = 1111
 
@@ -166,10 +166,19 @@ def test_follow_up_prompt_includes_the_previous_exchange():
     asyncio.run(scenario())
 
 
-def test_read_tool_call_executes_and_returns_to_the_model(tmp_path):
-    filesystem = tmp_path / "filesystem"
-    filesystem.mkdir()
-    (filesystem / "notes.txt").write_text("Cross the Rubicon.")
+def test_read_tool_call_executes_and_returns_to_the_model():
+    read_paths: list[str] = []
+
+    def read_file(path: str) -> str:
+        read_paths.append(path)
+        return "Cross the Rubicon."
+
+    read_tool = Tool(
+        name="read_file",
+        description="Read a file.",
+        tier=Tier.ONE,
+        function=read_file,
+    )
     model = FakeChatModel(
         responses=[
             AIMessage(
@@ -187,7 +196,7 @@ def test_read_tool_call_executes_and_returns_to_the_model(tmp_path):
     )
 
     async def scenario():
-        brain = Brain(model, "Be helpful.", agent_dir=tmp_path)
+        brain = Brain(model, "Be helpful.", tools=[read_tool])
 
         response = await brain.reply("What is in notes.txt?", chat_id=42)
         await brain.close()
@@ -196,6 +205,7 @@ def test_read_tool_call_executes_and_returns_to_the_model(tmp_path):
         tool_result = model.prompts[1][-1]
         assert isinstance(tool_result, ToolMessage)
         assert tool_result.content == "Cross the Rubicon."
+        assert read_paths == ["filesystem/notes.txt"]
         bound_read = next(
             tool for tool in model.bound_tools if tool.name == "read_file"
         )
@@ -204,9 +214,18 @@ def test_read_tool_call_executes_and_returns_to_the_model(tmp_path):
     asyncio.run(scenario())
 
 
-def test_web_fetch_tool_call_dispatches_to_the_web_client():
-    web_client = FakeWebClient(
-        pages={"https://example.com/report": "# Campaign report\n\nVictory."}
+def test_web_fetch_tool_call_executes_injected_tool():
+    fetched_urls: list[str] = []
+
+    def web_fetch(url: str) -> str:
+        fetched_urls.append(url)
+        return "# Campaign report\n\nVictory."
+
+    web_fetch_tool = Tool(
+        name="web_fetch",
+        description="Fetch a web page.",
+        tier=Tier.ONE,
+        function=web_fetch,
     )
     model = FakeChatModel(
         responses=[
@@ -225,13 +244,13 @@ def test_web_fetch_tool_call_dispatches_to_the_web_client():
     )
 
     async def scenario():
-        brain = Brain(model, "Be helpful.", web_client=web_client)
+        brain = Brain(model, "Be helpful.", tools=[web_fetch_tool])
 
         response = await brain.reply("Summarize the report.", chat_id=42)
         await brain.close()
 
         assert response == "The campaign ended in victory."
-        assert web_client.fetched_urls == ["https://example.com/report"]
+        assert fetched_urls == ["https://example.com/report"]
         tool_result = model.prompts[1][-1]
         assert isinstance(tool_result, ToolMessage)
         assert tool_result.content == "# Campaign report\n\nVictory."
@@ -239,10 +258,18 @@ def test_web_fetch_tool_call_dispatches_to_the_web_client():
     asyncio.run(scenario())
 
 
-def test_web_search_tool_call_dispatches_to_the_web_client():
-    web_client = FakeWebClient(
-        pages={},
-        searches={"Roman roads": "1. [Via Appia](https://example.com/appia)"},
+def test_web_search_tool_call_executes_injected_tool():
+    searched_queries: list[str] = []
+
+    def web_search(query: str) -> str:
+        searched_queries.append(query)
+        return "1. [Via Appia](https://example.com/appia)"
+
+    web_search_tool = Tool(
+        name="web_search",
+        description="Search the web.",
+        tier=Tier.ONE,
+        function=web_search,
     )
     model = FakeChatModel(
         responses=[
@@ -261,13 +288,13 @@ def test_web_search_tool_call_dispatches_to_the_web_client():
     )
 
     async def scenario():
-        brain = Brain(model, "Be helpful.", web_client=web_client)
+        brain = Brain(model, "Be helpful.", tools=[web_search_tool])
 
         response = await brain.reply("Find a Roman road.", chat_id=42)
         await brain.close()
 
         assert response == "The Via Appia is a notable Roman road."
-        assert web_client.searched_queries == ["Roman roads"]
+        assert searched_queries == ["Roman roads"]
         tool_result = model.prompts[1][-1]
         assert isinstance(tool_result, ToolMessage)
         assert tool_result.content == "1. [Via Appia](https://example.com/appia)"
@@ -275,9 +302,19 @@ def test_web_search_tool_call_dispatches_to_the_web_client():
     asyncio.run(scenario())
 
 
-def test_write_tool_call_writes_inside_the_agent_filesystem(tmp_path):
-    filesystem = tmp_path / "filesystem"
-    filesystem.mkdir()
+def test_write_tool_call_executes_injected_tool():
+    writes: list[tuple[str, str]] = []
+
+    def write_file(path: str, content: str) -> str:
+        writes.append((path, content))
+        return f"Wrote {path}"
+
+    write_tool = Tool(
+        name="write_file",
+        description="Write a file.",
+        tier=Tier.ONE,
+        function=write_file,
+    )
     model = FakeChatModel(
         responses=[
             AIMessage(
@@ -298,13 +335,13 @@ def test_write_tool_call_writes_inside_the_agent_filesystem(tmp_path):
     )
 
     async def scenario():
-        brain = Brain(model, "Be helpful.", agent_dir=tmp_path)
+        brain = Brain(model, "Be helpful.", tools=[write_tool])
 
         response = await brain.reply("Save the result.", chat_id=42)
         await brain.close()
 
         assert response == "I saved the summary."
-        assert (filesystem / "summary.txt").read_text() == "Victory."
+        assert writes == [("filesystem/summary.txt", "Victory.")]
 
     asyncio.run(scenario())
 
@@ -399,10 +436,16 @@ def test_long_conversations_trim_the_oldest_exchanges_from_the_prompt():
     asyncio.run(scenario())
 
 
-def test_history_trimming_keeps_tool_turns_intact(tmp_path):
-    filesystem = tmp_path / "filesystem"
-    filesystem.mkdir()
-    (filesystem / "notes.txt").write_text("Cross the Rubicon.")
+def test_history_trimming_keeps_tool_turns_intact():
+    def read_file(path: str) -> str:
+        return "Cross the Rubicon."
+
+    read_tool = Tool(
+        name="read_file",
+        description="Read a file.",
+        tier=Tier.ONE,
+        function=read_file,
+    )
     model = FakeChatModel(
         reply="Answer.",
         responses=[
@@ -421,7 +464,7 @@ def test_history_trimming_keeps_tool_turns_intact(tmp_path):
     )
 
     async def scenario():
-        brain = Brain(model, "Be helpful.", agent_dir=tmp_path)
+        brain = Brain(model, "Be helpful.", tools=[read_tool])
         await brain.reply("Read my note.", chat_id=42)
         for number in range(2, 8):
             await brain.reply(f"Question {number}", chat_id=42)

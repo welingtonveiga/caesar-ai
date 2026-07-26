@@ -3,13 +3,13 @@
 from collections.abc import Sequence
 from pathlib import Path
 
-from caesar.tools.types import Tier, ToolContext, ToolDefinition
+from caesar.tools.types import Tier, Tool, ToolContext
 
 
 class FilesystemToolset:
     """Build filesystem tools with trusted paths captured from the engine."""
 
-    def list_tools(self, context: ToolContext) -> Sequence[ToolDefinition]:
+    def list_tools(self, context: ToolContext) -> Sequence[Tool]:
         def read_file(path: str) -> str:
             target = context.agent_dir / path
             allowed = [context.agent_dir, *context.folders]
@@ -25,13 +25,13 @@ class FilesystemToolset:
             return f"Wrote {path}"
 
         return (
-            ToolDefinition(
+            Tool(
                 name="read_file",
                 description="Read a UTF-8 text file from an allowed local folder.",
                 tier=Tier.ONE,
                 function=read_file,
             ),
-            ToolDefinition(
+            Tool(
                 name="write_file",
                 description="Write a UTF-8 text file inside the agent filesystem.",
                 tier=Tier.ONE,

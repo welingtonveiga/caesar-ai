@@ -7,7 +7,7 @@ import httpx
 from ddgs import DDGS
 from markdownify import markdownify
 
-from caesar.tools.types import Tier, ToolContext, ToolDefinition
+from caesar.tools.types import Tier, Tool, ToolContext
 
 
 class SearchBackend(Protocol):
@@ -21,8 +21,8 @@ class SearchBackend(Protocol):
     ) -> list[dict[str, str]]: ...
 
 
-class DefaultWebClient:
-    """Fetch web content using the built-in production integrations."""
+class WebAccessToolset:
+    """Build web tools backed by the production HTTP and search integrations."""
 
     def __init__(
         self,
@@ -32,46 +32,38 @@ class DefaultWebClient:
         self._transport = transport
         self._search_backend = search_backend
 
-    def fetch(self, url: str) -> str:
-        with httpx.Client(
-            transport=self._transport,
-            follow_redirects=True,
-            timeout=10,
-        ) as client:
-            response = client.get(url)
-            response.raise_for_status()
+    def list_tools(self, context: ToolContext) -> Sequence[Tool]:
+        del context
 
-        if "text/html" in response.headers.get("content-type", ""):
-            return markdownify(response.text, heading_style="ATX").strip()
-        return response.text
-
-    def search(self, query: str) -> str:
-        backend = self._search_backend or DDGS()
-        results = backend.text(query, max_results=5)
-        return "\n\n".join(
-            f"{number}. [{result['title']}]({result['href']})\n   {result['body']}"
-            for number, result in enumerate(results, start=1)
-        )
-
-
-class WebAccessToolset:
-    """Build web tools with the trusted web client captured from the engine."""
-
-    def list_tools(self, context: ToolContext) -> Sequence[ToolDefinition]:
         def web_fetch(url: str) -> str:
-            return context.web_client.fetch(url)
+            with httpx.Client(
+                transport=self._transport,
+                follow_redirects=True,
+                timeout=10,
+            ) as client:
+                response = client.get(url)
+                response.raise_for_status()
+
+            if "text/html" in response.headers.get("content-type", ""):
+                return markdownify(response.text, heading_style="ATX").strip()
+            return response.text
 
         def web_search(query: str) -> str:
-            return context.web_client.search(query)
+            backend = self._search_backend or DDGS()
+            results = backend.text(query, max_results=5)
+            return "\n\n".join(
+                f"{number}. [{result['title']}]({result['href']})\n   {result['body']}"
+                for number, result in enumerate(results, start=1)
+            )
 
         return (
-            ToolDefinition(
+            Tool(
                 name="web_fetch",
                 description="Fetch a web page and return its readable content.",
                 tier=Tier.ONE,
                 function=web_fetch,
             ),
-            ToolDefinition(
+            Tool(
                 name="web_search",
                 description="Search the web and return relevant results.",
                 tier=Tier.ONE,

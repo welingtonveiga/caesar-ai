@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class Tier(Enum):
@@ -19,34 +19,29 @@ class Tier(Enum):
     THREE = 3
 
 
-class WebClient(Protocol):
-    """The web operations required by Caesar's web tools."""
-
-    def fetch(self, url: str) -> str: ...
-
-    def search(self, query: str) -> str: ...
-
-
 @dataclass(frozen=True)
 class ToolContext:
     """Trusted dependencies available while constructing tools."""
 
     agent_dir: Path
     folders: Sequence[Path]
-    web_client: WebClient
 
 
 @dataclass(frozen=True)
-class ToolDefinition:
-    """A tool's model-facing declaration and execution policy."""
+class Tool:
+    """A model-facing capability and its execution policy."""
 
     name: str
     description: str
     tier: Tier
     function: Callable[..., str]
 
+    def execute(self, **arguments: Any) -> str:
+        """Run the tool's function with model-supplied arguments."""
+        return self.function(**arguments)
+
 
 class Toolset(Protocol):
     """A themed collection of built-in tools."""
 
-    def list_tools(self, context: ToolContext) -> Sequence[ToolDefinition]: ...
+    def list_tools(self, context: ToolContext) -> Sequence[Tool]: ...
