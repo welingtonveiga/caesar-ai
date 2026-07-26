@@ -123,6 +123,23 @@ def test_write_file_writes_inside_the_agent_filesystem(tmp_path):
     assert (filesystem / "summary.txt").read_text() == "The campaign is complete."
 
 
+def test_write_host_file_writes_inside_a_configured_folder(tmp_path):
+    agent_dir = tmp_path / "agent"
+    agent_dir.mkdir()
+    documents = tmp_path / "documents"
+    documents.mkdir()
+
+    result = configured_tools(agent_dir, folders=[documents])[
+        "write_host_file"
+    ].execute(
+        path=str(documents / "summary.txt"),
+        content="The campaign is complete.",
+    )
+
+    assert result == f"Wrote {documents / 'summary.txt'}"
+    assert (documents / "summary.txt").read_text() == "The campaign is complete."
+
+
 def test_write_file_rejects_paths_outside_the_agent_filesystem(tmp_path):
     (tmp_path / "filesystem").mkdir()
 

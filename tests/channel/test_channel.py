@@ -6,17 +6,18 @@ import logging
 import pytest
 
 from caesar.channel import Channel, ChannelError, IncomingMessage, create_channel
+from tests.support.fake_message_handler import FakeMessageHandler
 from tests.support.fake_transport import FakeTransport
 
 OWNER_ID = 1111
 
 
-async def reply(_: str, __: int) -> str:
-    return "Ave! Caesar is alive."
-
-
 def make_channel(transport: FakeTransport) -> Channel:
-    return Channel(transport, allowed_user_ids=[OWNER_ID], reply=reply)
+    return Channel(
+        transport,
+        allowed_user_ids=[OWNER_ID],
+        handler=FakeMessageHandler(reply="Ave! Caesar is alive."),
+    )
 
 
 def test_allowlisted_sender_gets_injected_reply():
@@ -55,7 +56,11 @@ def test_channel_refuses_to_start_without_allowlist():
     async def scenario():
         transport = FakeTransport()
 
-        channel = Channel(transport, allowed_user_ids=[], reply=reply)
+        channel = Channel(
+            transport,
+            allowed_user_ids=[],
+            handler=FakeMessageHandler(reply="Ave! Caesar is alive."),
+        )
 
         with pytest.raises(ChannelError, match="allowlist"):
             await channel.start()
@@ -67,4 +72,4 @@ def test_channel_refuses_to_start_without_allowlist():
 
 def test_create_channel_without_supported_channel_fails():
     with pytest.raises(ChannelError, match="No supported channel"):
-        create_channel({}, reply)
+        create_channel({}, FakeMessageHandler(reply="Ave! Caesar is alive."))

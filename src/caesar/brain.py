@@ -18,7 +18,9 @@ from langchain_core.messages import (
 from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.types import Command, interrupt
 
+from caesar.approval import ApprovalRequest
 from caesar.config import AgentConfig, ConfigError
 from caesar.tools import (
     Tier,
@@ -30,6 +32,7 @@ from caesar.tools import (
 logger = logging.getLogger(__name__)
 
 ERROR_REPLY = "I am sorry, but I could not reach my counsel. Please try again shortly."
+APPROVAL_REQUIRED_REPLY = "Approval required. Please use the approval buttons."
 MAX_HISTORY_MESSAGES = 12
 
 
@@ -77,24 +80,59 @@ class Brain:
         """Return an LLM response, keeping provider failures out of the channel."""
         try:
             graph = await self._get_graph()
+            config = {"configurable": {"thread_id": f"chat:{chat_id}"}}
+            snapshot = await graph.aget_state(config)
+            if "approval" in snapshot.next:
+                return APPROVAL_REQUIRED_REPLY
             state = await graph.ainvoke(
                 {"messages": [HumanMessage(text)]},
-                {"configurable": {"thread_id": f"chat:{chat_id}"}},
+                config,
             )
         except Exception:
             logger.exception("LLM reply failed")
             return ERROR_REPLY
 
-        response = state["messages"][-1]
-        content = response.content
-        if isinstance(content, str):
-            return content
-        text = "\n".join(
-            block["text"]
-            for block in content
-            if isinstance(block, dict) and isinstance(block.get("text"), str)
+        if state.get("__interrupt__"):
+            return APPROVAL_REQUIRED_REPLY
+        return _response_text(state["messages"][-1])
+
+    async def resolve_approval(self, chat_id: int, approved: bool) -> str:
+        """Resume a paused Tier 3 call after an explicit channel callback."""
+        try:
+            graph = await self._get_graph()
+            state = await graph.ainvoke(
+                Command(resume=approved),
+                {"configurable": {"thread_id": f"chat:{chat_id}"}},
+            )
+        except Exception:
+            logger.exception("Approval resume failed")
+            return ERROR_REPLY
+        return _response_text(state["messages"][-1])
+
+    async def pending_approval(self, chat_id: int) -> ApprovalRequest | None:
+        """Return the persisted approval payload for a paused chat, if any."""
+        graph = await self._get_graph()
+        snapshot = await graph.aget_state(
+            {"configurable": {"thread_id": f"chat:{chat_id}"}}
         )
-        return text or str(content)
+        if "approval" not in snapshot.next or len(snapshot.interrupts) != 1:
+            return None
+        payload = snapshot.interrupts[0].value
+        if (
+            not isinstance(payload, dict)
+            or not isinstance(payload.get("tool_call_id"), str)
+            or not isinstance(payload.get("tool"), str)
+            or not isinstance(payload.get("path"), str)
+            or not isinstance(payload.get("content_summary"), (str, type(None)))
+        ):
+            return None
+        return ApprovalRequest(
+            chat_id=chat_id,
+            tool_call_id=payload["tool_call_id"],
+            tool=payload["tool"],
+            path=payload["path"],
+            content_summary=payload["content_summary"],
+        )
 
     async def close(self) -> None:
         """Release the SQLite connection owned by this brain."""
@@ -150,9 +188,79 @@ class Brain:
             tool = self._tools.get(call["name"])
             if tool is None:
                 raise ValueError(f"Unknown tool: {call['name']}")
+            if tool.tier is Tier.THREE:
+                return "approval_prep"
             if tool.tier is not Tier.ONE:
                 raise ValueError(f"Tool {tool.name} is not available autonomously")
         return "tools"
+
+    async def _request_approval(
+        self, state: MessagesState
+    ) -> dict[str, list[ToolMessage]]:
+        response = next(
+            (
+                message
+                for message in reversed(state["messages"])
+                if isinstance(message, AIMessage) and message.tool_calls
+            ),
+            None,
+        )
+        assert response is not None
+        calls = [
+            call
+            for call in response.tool_calls
+            if self._tools[call["name"]].tier is Tier.THREE
+        ]
+        if len(calls) != 1:
+            return {
+                "messages": [
+                    ToolMessage(
+                        content=(
+                            "I can request approval for only one Tier 3 action "
+                            "at a time."
+                        ),
+                        tool_call_id=call["id"],
+                        name=self._tools[call["name"]].name,
+                    )
+                    for call in calls
+                ]
+            }
+        call = calls[0]
+        tool = self._tools[call["name"]]
+        arguments = call["args"]
+        content = arguments.get("content")
+        decision = interrupt(
+            {
+                "tool_call_id": call["id"],
+                "tool": tool.name,
+                "path": arguments.get("path"),
+                "content_summary": (
+                    f"{len(content)} characters: {content[:200]!r}"
+                    if isinstance(content, str)
+                    else None
+                ),
+            }
+        )
+        if decision is not True:
+            return {
+                "messages": [
+                    ToolMessage(
+                        content="The user rejected this action.",
+                        tool_call_id=call["id"],
+                        name=tool.name,
+                    )
+                ]
+            }
+        result = tool.execute(**arguments)
+        return {
+            "messages": [
+                ToolMessage(
+                    content=result,
+                    tool_call_id=call["id"],
+                    name=tool.name,
+                )
+            ]
+        }
 
     async def _call_tools(self, state: MessagesState) -> dict[str, list[ToolMessage]]:
         response = state["messages"][-1]
@@ -160,6 +268,8 @@ class Brain:
         results: list[ToolMessage] = []
         for call in response.tool_calls:
             tool = self._tools[call["name"]]
+            if tool.tier is not Tier.ONE:
+                continue
             result = tool.execute(**call["args"])
             results.append(
                 ToolMessage(
@@ -176,18 +286,39 @@ class Brain:
             graph = StateGraph(MessagesState)
             graph.add_node("agent", self._call_model)
             graph.add_node("tools", self._call_tools)
+            graph.add_node("approval_prep", self._call_tools)
+            graph.add_node("approval", self._request_approval)
             graph.add_node("trim", self._trim_history)
             graph.add_edge(START, "agent")
             graph.add_conditional_edges(
                 "agent",
                 self._route_by_tier,
-                {"tools": "tools", "trim": "trim"},
+                {
+                    "tools": "tools",
+                    "approval_prep": "approval_prep",
+                    "trim": "trim",
+                },
             )
             graph.add_edge("tools", "agent")
+            graph.add_edge("approval_prep", "approval")
+            graph.add_edge("approval", "agent")
             graph.add_edge("trim", END)
             self._connection = connection
             self._graph = graph.compile(checkpointer=AsyncSqliteSaver(connection))
         return self._graph
+
+
+def _response_text(response: BaseMessage) -> str:
+    """Convert a provider response into channel-safe plain text."""
+    content = response.content
+    if isinstance(content, str):
+        return content
+    text = "\n".join(
+        block["text"]
+        for block in content
+        if isinstance(block, dict) and isinstance(block.get("text"), str)
+    )
+    return text or str(content)
 
 
 def create_brain(

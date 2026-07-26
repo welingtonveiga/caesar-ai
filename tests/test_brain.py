@@ -4,8 +4,8 @@ import asyncio
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from caesar.brain import Brain, create_brain
-from caesar.channel import Channel, IncomingMessage
+from caesar.brain import APPROVAL_REQUIRED_REPLY, Brain, create_brain
+from caesar.channel import Channel, IncomingCallback, IncomingMessage
 from caesar.config import AgentConfig
 from caesar.tools import Tier, Tool
 from tests.support.fake_chat_model import FakeChatModel
@@ -35,7 +35,7 @@ def test_create_brain_loads_soul_and_configures_model(tmp_path):
         model_factory=make_model,
     )
     transport = FakeTransport()
-    channel = Channel(transport, allowed_user_ids=[OWNER_ID], reply=brain.reply)
+    channel = Channel(transport, allowed_user_ids=[OWNER_ID], handler=brain)
 
     async def scenario():
         await channel.start()
@@ -103,7 +103,7 @@ def test_allowlisted_message_gets_llm_reply_with_engine_scaffold_and_soul():
         model = FakeChatModel(reply="The Rubicon is dry today.")
         brain = Brain(model, "Be dry-witted, but helpful.")
         transport = FakeTransport()
-        channel = Channel(transport, allowed_user_ids=[OWNER_ID], reply=brain.reply)
+        channel = Channel(transport, allowed_user_ids=[OWNER_ID], handler=brain)
         await channel.start()
 
         await transport.receive(
@@ -131,7 +131,7 @@ def test_follow_up_prompt_includes_the_previous_exchange():
         model = FakeChatModel(reply="Lugdunum.")
         brain = Brain(model, "Be helpful.")
         transport = FakeTransport()
-        channel = Channel(transport, allowed_user_ids=[OWNER_ID], reply=brain.reply)
+        channel = Channel(transport, allowed_user_ids=[OWNER_ID], handler=brain)
         await channel.start()
 
         await transport.receive(
@@ -346,6 +346,432 @@ def test_write_tool_call_executes_injected_tool():
     asyncio.run(scenario())
 
 
+def test_tier_three_tool_waits_for_explicit_approval_before_executing():
+    writes: list[tuple[str, str]] = []
+
+    def write_host_file(path: str, content: str) -> str:
+        writes.append((path, content))
+        return f"Wrote {path}"
+
+    write_host_file_tool = Tool(
+        name="write_host_file",
+        description="Write a file to a configured host folder.",
+        tier=Tier.THREE,
+        function=write_host_file,
+    )
+    model = FakeChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-1",
+                        "name": "write_host_file",
+                        "args": {
+                            "path": "/Documents/summary.txt",
+                            "content": "Victory.",
+                        },
+                    }
+                ],
+            ),
+            AIMessage(content="I saved the summary."),
+        ]
+    )
+
+    async def scenario():
+        brain = Brain(model, "Be helpful.", tools=[write_host_file_tool])
+        try:
+            response = await brain.reply("Save the result to Documents.", chat_id=42)
+
+            assert response == "Approval required. Please use the approval buttons."
+            assert writes == []
+
+            response = await brain.reply("Go ahead.", chat_id=42)
+
+            assert response == "Approval required. Please use the approval buttons."
+            assert writes == []
+            assert len(model.prompts) == 1
+
+            response = await brain.resolve_approval(chat_id=42, approved=True)
+
+            assert response == "I saved the summary."
+            assert writes == [("/Documents/summary.txt", "Victory.")]
+        finally:
+            await brain.close()
+
+    asyncio.run(scenario())
+
+
+def test_tier_one_calls_execute_before_a_tier_three_approval():
+    reads: list[str] = []
+    writes: list[tuple[str, str]] = []
+
+    def read_file(path: str) -> str:
+        reads.append(path)
+        return "Victory."
+
+    def write_host_file(path: str, content: str) -> str:
+        writes.append((path, content))
+        return f"Wrote {path}"
+
+    model = FakeChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-read",
+                        "name": "read_file",
+                        "args": {"path": "filesystem/source.txt"},
+                    },
+                    {
+                        "id": "call-write",
+                        "name": "write_host_file",
+                        "args": {
+                            "path": "/Documents/summary.txt",
+                            "content": "Victory.",
+                        },
+                    },
+                ],
+            ),
+            AIMessage(content="I saved the summary."),
+        ]
+    )
+    tools = [
+        Tool(
+            name="read_file",
+            description="Read a file.",
+            tier=Tier.ONE,
+            function=read_file,
+        ),
+        Tool(
+            name="write_host_file",
+            description="Write a file to a configured host folder.",
+            tier=Tier.THREE,
+            function=write_host_file,
+        ),
+    ]
+
+    async def scenario():
+        brain = Brain(model, "Be helpful.", tools=tools)
+        try:
+            response = await brain.reply("Read then save the result.", chat_id=42)
+
+            assert response == APPROVAL_REQUIRED_REPLY
+            assert reads == ["filesystem/source.txt"]
+            assert writes == []
+
+            response = await brain.resolve_approval(chat_id=42, approved=True)
+
+            assert response == "I saved the summary."
+            assert reads == ["filesystem/source.txt"]
+            assert writes == [("/Documents/summary.txt", "Victory.")]
+        finally:
+            await brain.close()
+
+    asyncio.run(scenario())
+
+
+def test_multiple_tier_three_calls_return_a_model_visible_rejection():
+    writes: list[tuple[str, str]] = []
+
+    def write_host_file(path: str, content: str) -> str:
+        writes.append((path, content))
+        return f"Wrote {path}"
+
+    model = FakeChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-1",
+                        "name": "write_host_file",
+                        "args": {"path": "/Documents/one.txt", "content": "One."},
+                    },
+                    {
+                        "id": "call-2",
+                        "name": "write_host_file",
+                        "args": {"path": "/Documents/two.txt", "content": "Two."},
+                    },
+                ],
+            ),
+            AIMessage(content="I need to request those approvals one at a time."),
+        ]
+    )
+    tool = Tool(
+        name="write_host_file",
+        description="Write a file to a configured host folder.",
+        tier=Tier.THREE,
+        function=write_host_file,
+    )
+
+    async def scenario():
+        brain = Brain(model, "Be helpful.", tools=[tool])
+        try:
+            response = await brain.reply("Save both files.", chat_id=42)
+
+            assert response == "I need to request those approvals one at a time."
+            assert writes == []
+            tool_messages = model.prompts[1][-2:]
+            assert all(isinstance(message, ToolMessage) for message in tool_messages)
+            assert [message.tool_call_id for message in tool_messages] == [
+                "call-1",
+                "call-2",
+            ]
+        finally:
+            await brain.close()
+
+    asyncio.run(scenario())
+
+
+def test_tier_three_tool_sends_an_approval_card_and_resumes_from_its_callback():
+    writes: list[tuple[str, str]] = []
+
+    def write_host_file(path: str, content: str) -> str:
+        writes.append((path, content))
+        return f"Wrote {path}"
+
+    model = FakeChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-1",
+                        "name": "write_host_file",
+                        "args": {
+                            "path": "/Documents/summary.txt",
+                            "content": "Victory.",
+                        },
+                    }
+                ],
+            ),
+            AIMessage(content="I saved the summary."),
+        ]
+    )
+    tool = Tool(
+        name="write_host_file",
+        description="Write a file to a configured host folder.",
+        tier=Tier.THREE,
+        function=write_host_file,
+    )
+
+    async def scenario():
+        brain = Brain(model, "Be helpful.", tools=[tool])
+        transport = FakeTransport()
+        channel = Channel(
+            transport,
+            allowed_user_ids=[OWNER_ID],
+            handler=brain,
+        )
+        try:
+            await channel.start()
+            await transport.receive(
+                IncomingMessage(
+                    sender_id=OWNER_ID,
+                    chat_id=42,
+                    text="Save the result to Documents.",
+                )
+            )
+
+            assert transport.sent == []
+            assert transport.approvals[0].tool_call_id == "call-1"
+            assert transport.approvals[0].path == "/Documents/summary.txt"
+            assert transport.approvals[0].content_summary == "8 characters: 'Victory.'"
+            assert writes == []
+
+            await transport.receive(
+                IncomingMessage(sender_id=OWNER_ID, chat_id=42, text="Go ahead.")
+            )
+
+            assert transport.sent == [(42, APPROVAL_REQUIRED_REPLY)]
+            assert len(transport.approvals) == 1
+
+            await transport.receive_callback(
+                IncomingCallback(
+                    sender_id=OWNER_ID,
+                    chat_id=42,
+                    data="approval:approve:call-1",
+                )
+            )
+
+            assert transport.sent == [
+                (42, APPROVAL_REQUIRED_REPLY),
+                (42, "I saved the summary."),
+            ]
+            assert writes == [("/Documents/summary.txt", "Victory.")]
+
+            await transport.receive_callback(
+                IncomingCallback(
+                    sender_id=OWNER_ID,
+                    chat_id=42,
+                    data="approval:approve:call-1",
+                )
+            )
+
+            assert transport.sent == [
+                (42, APPROVAL_REQUIRED_REPLY),
+                (42, "I saved the summary."),
+                (42, "This approval is no longer pending."),
+            ]
+            assert writes == [("/Documents/summary.txt", "Victory.")]
+        finally:
+            await brain.close()
+
+    asyncio.run(scenario())
+
+
+def test_tier_three_rejection_does_not_execute_the_host_write():
+    writes: list[tuple[str, str]] = []
+
+    def write_host_file(path: str, content: str) -> str:
+        writes.append((path, content))
+        return f"Wrote {path}"
+
+    model = FakeChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-1",
+                        "name": "write_host_file",
+                        "args": {
+                            "path": "/Documents/summary.txt",
+                            "content": "Victory.",
+                        },
+                    }
+                ],
+            ),
+            AIMessage(content="I will not write the summary."),
+        ]
+    )
+    tool = Tool(
+        name="write_host_file",
+        description="Write a file to a configured host folder.",
+        tier=Tier.THREE,
+        function=write_host_file,
+    )
+
+    async def scenario():
+        brain = Brain(model, "Be helpful.", tools=[tool])
+        transport = FakeTransport()
+        channel = Channel(transport, allowed_user_ids=[OWNER_ID], handler=brain)
+        try:
+            await channel.start()
+            await transport.receive(
+                IncomingMessage(
+                    sender_id=OWNER_ID,
+                    chat_id=42,
+                    text="Save the result to Documents.",
+                )
+            )
+
+            await transport.receive_callback(
+                IncomingCallback(
+                    sender_id=OWNER_ID,
+                    chat_id=42,
+                    data="approval:reject:call-1",
+                )
+            )
+
+            assert transport.sent == [(42, "I will not write the summary.")]
+            assert writes == []
+        finally:
+            await brain.close()
+
+    asyncio.run(scenario())
+
+
+def test_pending_approval_survives_rebuilding_the_brain_with_the_same_database(
+    tmp_path,
+):
+    writes: list[tuple[str, str]] = []
+
+    def write_host_file(path: str, content: str) -> str:
+        writes.append((path, content))
+        return f"Wrote {path}"
+
+    tool = Tool(
+        name="write_host_file",
+        description="Write a file to a configured host folder.",
+        tier=Tier.THREE,
+        function=write_host_file,
+    )
+    first_model = FakeChatModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "call-1",
+                        "name": "write_host_file",
+                        "args": {
+                            "path": "/Documents/summary.txt",
+                            "content": "Victory.",
+                        },
+                    }
+                ],
+            )
+        ]
+    )
+    second_model = FakeChatModel(responses=[AIMessage(content="I saved the summary.")])
+
+    async def scenario():
+        database = tmp_path / "current.db"
+        first_brain = Brain(first_model, "Be helpful.", database=database, tools=[tool])
+        first_transport = FakeTransport()
+        first_channel = Channel(
+            first_transport,
+            allowed_user_ids=[OWNER_ID],
+            handler=first_brain,
+        )
+        await first_channel.start()
+        await first_transport.receive(
+            IncomingMessage(
+                sender_id=OWNER_ID,
+                chat_id=42,
+                text="Save the result to Documents.",
+            )
+        )
+
+        assert len(first_transport.approvals) == 1
+        assert writes == []
+        await first_brain.close()
+
+        rebuilt_brain = Brain(
+            second_model,
+            "Be helpful.",
+            database=database,
+            tools=[tool],
+        )
+        rebuilt_transport = FakeTransport()
+        rebuilt_channel = Channel(
+            rebuilt_transport,
+            allowed_user_ids=[OWNER_ID],
+            handler=rebuilt_brain,
+        )
+        try:
+            await rebuilt_channel.start()
+            await rebuilt_transport.receive_callback(
+                IncomingCallback(
+                    sender_id=OWNER_ID,
+                    chat_id=42,
+                    data=(
+                        f"approval:approve:{first_transport.approvals[0].tool_call_id}"
+                    ),
+                )
+            )
+
+            assert rebuilt_transport.sent == [(42, "I saved the summary.")]
+            assert writes == [("/Documents/summary.txt", "Victory.")]
+        finally:
+            await rebuilt_brain.close()
+
+    asyncio.run(scenario())
+
+
 def test_follow_up_survives_rebuilding_the_brain_with_the_same_database(tmp_path):
     (tmp_path / "soul.md").write_text("Be helpful.")
     config = AgentConfig(
@@ -363,7 +789,7 @@ def test_follow_up_survives_rebuilding_the_brain_with_the_same_database(tmp_path
         )
         first_transport = FakeTransport()
         first_channel = Channel(
-            first_transport, allowed_user_ids=[OWNER_ID], reply=first_brain.reply
+            first_transport, allowed_user_ids=[OWNER_ID], handler=first_brain
         )
         await first_channel.start()
         await first_transport.receive(
@@ -380,7 +806,7 @@ def test_follow_up_survives_rebuilding_the_brain_with_the_same_database(tmp_path
         )
         rebuilt_transport = FakeTransport()
         rebuilt_channel = Channel(
-            rebuilt_transport, allowed_user_ids=[OWNER_ID], reply=rebuilt_brain.reply
+            rebuilt_transport, allowed_user_ids=[OWNER_ID], handler=rebuilt_brain
         )
         await rebuilt_channel.start()
         await rebuilt_transport.receive(
@@ -414,7 +840,7 @@ def test_long_conversations_trim_the_oldest_exchanges_from_the_prompt():
         model = FakeChatModel(reply="Answer.")
         brain = Brain(model, "Be helpful.")
         transport = FakeTransport()
-        channel = Channel(transport, allowed_user_ids=[OWNER_ID], reply=brain.reply)
+        channel = Channel(transport, allowed_user_ids=[OWNER_ID], handler=brain)
         await channel.start()
 
         for number in range(1, 9):
@@ -492,7 +918,7 @@ def test_structured_llm_content_replies_with_text_only():
         )
         brain = Brain(model, "Be helpful.")
         transport = FakeTransport()
-        channel = Channel(transport, allowed_user_ids=[OWNER_ID], reply=brain.reply)
+        channel = Channel(transport, allowed_user_ids=[OWNER_ID], handler=brain)
         await channel.start()
 
         await transport.receive(
@@ -509,7 +935,7 @@ def test_failed_llm_call_gets_graceful_reply():
     async def scenario():
         brain = Brain(FakeChatModel(error=RuntimeError("no API key")), "Be helpful.")
         transport = FakeTransport()
-        channel = Channel(transport, allowed_user_ids=[OWNER_ID], reply=brain.reply)
+        channel = Channel(transport, allowed_user_ids=[OWNER_ID], handler=brain)
         await channel.start()
 
         await transport.receive(
@@ -546,7 +972,7 @@ def test_model_initialization_failure_gets_graceful_reply(tmp_path):
             model_factory=missing_model,
         )
         transport = FakeTransport()
-        channel = Channel(transport, allowed_user_ids=[OWNER_ID], reply=brain.reply)
+        channel = Channel(transport, allowed_user_ids=[OWNER_ID], handler=brain)
         await channel.start()
 
         await transport.receive(

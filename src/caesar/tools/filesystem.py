@@ -24,6 +24,15 @@ class FilesystemToolset:
             target.write_text(content)
             return f"Wrote {path}"
 
+        def write_host_file(path: str, content: str) -> str:
+            target = _ensure_contained(
+                context.agent_dir / path,
+                context.folders,
+                path,
+            )
+            target.write_text(content)
+            return f"Wrote {path}"
+
         return (
             Tool(
                 name="read_file",
@@ -36,6 +45,12 @@ class FilesystemToolset:
                 description="Write a UTF-8 text file inside the agent filesystem.",
                 tier=Tier.ONE,
                 function=write_file,
+            ),
+            Tool(
+                name="write_host_file",
+                description="Write a UTF-8 text file inside a configured host folder.",
+                tier=Tier.THREE,
+                function=write_host_file,
             ),
         )
 

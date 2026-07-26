@@ -43,7 +43,7 @@ def main() -> int:
         agent_dir = resolve_agent_dir(args.agent_dir)
         config = load_agent_config(agent_dir)
         brain = create_brain(config, agent_dir)
-        channel = create_channel(config.channels, brain.reply)
+        channel = create_channel(config.channels, brain)
         print(f"{config.name} is listening. Press Ctrl-C to stop.")
         asyncio.run(_run_agent(channel, brain))
     except (ConfigError, ChannelError) as error:
