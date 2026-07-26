@@ -4,11 +4,11 @@
 
 **Blocked by:** 04 — Multi-turn conversation with persistence.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Graph shape: agent node → tier router → tools node → agent node, ending when the model stops calling tools
-- [ ] Tools: read local files (agent dir + `agent.yml`-configured folders), web fetch/search, write inside `filesystem/`
-- [ ] Every tool declares its tier; the router dispatches Tier 1 with no user interaction
-- [ ] Path traversal outside allowed folders is rejected at the tool boundary (tested)
-- [ ] Multi-step tool use works: a request needing read-then-answer completes in one conversational turn
-- [ ] Tests drive the full graph with fake model + fake web, asserting tool dispatch and tier classification
+- [X] Graph shape: agent node → tier router → tools node → agent node, ending when the model stops calling tools
+- [X] Tools: read local files (agent dir + `agent.yml`-configured folders), web fetch/search, write inside `filesystem/`
+- [X] Every tool declares its tier; the router dispatches Tier 1 with no user interaction
+- [X] Path traversal outside allowed folders is rejected at the tool boundary (tested)
+- [X] Multi-step tool use works: a request needing read-then-answer completes in one conversational turn
+- [X] Tests drive the full graph with fake model + fake web, asserting tool dispatch and tier classification

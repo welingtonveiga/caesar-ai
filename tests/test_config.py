@@ -74,6 +74,25 @@ def test_defaults_to_gemini_model(tmp_path):
     assert config.model == "google_genai:gemini-3.1-flash-lite"
 
 
+def test_loads_additional_readable_folders(tmp_path):
+    external_folder = tmp_path / "documents"
+    agent_dir = write_agent_dir(
+        tmp_path,
+        f"folders:\n  - {external_folder}\n",
+    )
+
+    config = load_agent_config(agent_dir)
+
+    assert config.folders == [external_folder]
+
+
+def test_rejects_folders_that_are_not_a_list(tmp_path):
+    agent_dir = write_agent_dir(tmp_path, "folders: /tmp/documents\n")
+
+    with pytest.raises(ConfigError, match="'folders' must be a list of paths"):
+        load_agent_config(agent_dir)
+
+
 def test_rejects_inline_telegram_allowlist(tmp_path):
     agent_dir = write_agent_dir(
         tmp_path,

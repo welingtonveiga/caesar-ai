@@ -4,6 +4,8 @@ model:
   temperature: 0.2
   max_tokens: 1024
 
+folders: []
+
 channels:
   telegram:
     token: ${TELEGRAM_BOT_TOKEN}

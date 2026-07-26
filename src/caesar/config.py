@@ -2,7 +2,7 @@
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -25,6 +25,7 @@ class AgentConfig:
     model: str
     model_params: dict[str, float | int]
     channels: dict
+    folders: list[Path] = field(default_factory=list)
 
 
 def resolve_agent_dir(cli_arg: str | None) -> Path:
@@ -79,6 +80,13 @@ def load_agent_config(agent_dir: Path) -> AgentConfig:
     if not isinstance(name, str) or not name:
         raise ConfigError(f"{config_path}: 'name' must be a non-empty string.")
 
+    raw_folders = raw.get("folders") or []
+    if not isinstance(raw_folders, list) or not all(
+        isinstance(folder, str) for folder in raw_folders
+    ):
+        raise ConfigError(f"{config_path}: 'folders' must be a list of paths.")
+    folders = [Path(folder).expanduser() for folder in raw_folders]
+
     model_params: dict[str, float | int] = {}
     for param_name in ("temperature", "max_tokens"):
         if param_name not in model_config:
@@ -93,6 +101,7 @@ def load_agent_config(agent_dir: Path) -> AgentConfig:
         model=model,
         model_params=model_params,
         channels=channels,
+        folders=folders,
     )
 
 
