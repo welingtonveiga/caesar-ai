@@ -23,11 +23,10 @@ from caesar.config import AgentConfig, ConfigError
 from caesar.tools import (
     DefaultWebClient,
     Tier,
+    ToolContext,
     WebClient,
-    read_file,
-    web_fetch,
-    web_search,
-    write_file,
+    execute_tool,
+    list_tools,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,34 +66,14 @@ class Brain:
         self._agent_dir = agent_dir or Path.cwd()
         self._folders = tuple(folders)
         self._web_client = web_client or DefaultWebClient()
-        self._tools = {
-            read_file.name: read_file,
-            web_fetch.name: web_fetch,
-            web_search.name: web_search,
-            write_file.name: write_file,
-        }
-        self._model_tools = {
-            read_file.name: StructuredTool.from_function(
-                func=self._read_agent_file,
-                name=read_file.name,
-                description="Read a UTF-8 text file from an allowed local folder.",
-            ),
-            web_fetch.name: StructuredTool.from_function(
-                func=self._fetch_web,
-                name=web_fetch.name,
-                description="Fetch a web page and return its readable content.",
-            ),
-            web_search.name: StructuredTool.from_function(
-                func=self._search_web,
-                name=web_search.name,
-                description="Search the web and return relevant results.",
-            ),
-            write_file.name: StructuredTool.from_function(
-                func=self._write_agent_file,
-                name=write_file.name,
-                description="Write a UTF-8 text file inside the agent filesystem.",
-            ),
-        }
+        tools = list_tools(
+            ToolContext(
+                agent_dir=self._agent_dir,
+                folders=self._folders,
+                web_client=self._web_client,
+            )
+        )
+        self._tools = {tool.name: tool for tool in tools}
         self._tools_bound = False
         self._graph: Any | None = None
         self._connection: aiosqlite.Connection | None = None
@@ -143,32 +122,21 @@ class Brain:
             assert self._model_builder is not None
             self._model = self._model_builder()
         if not self._tools_bound:
-            self._model = self._model.bind_tools(list(self._model_tools.values()))
+            self._model = self._model.bind_tools(
+                [
+                    StructuredTool.from_function(
+                        func=tool.function,
+                        name=tool.name,
+                        description=tool.description,
+                    )
+                    for tool in self._tools.values()
+                ]
+            )
             self._tools_bound = True
         response = await self._model.ainvoke(
             [SystemMessage(self._system_prompt), *state["messages"]]
         )
         return {"messages": [response]}
-
-    def _read_agent_file(self, path: str) -> str:
-        return read_file.run(
-            agent_dir=self._agent_dir,
-            path=path,
-            allowed_folders=self._folders,
-        )
-
-    def _fetch_web(self, url: str) -> str:
-        return web_fetch.run(web_client=self._web_client, url=url)
-
-    def _search_web(self, query: str) -> str:
-        return web_search.run(web_client=self._web_client, query=query)
-
-    def _write_agent_file(self, path: str, content: str) -> str:
-        return write_file.run(
-            agent_dir=self._agent_dir,
-            path=path,
-            content=content,
-        )
 
     def _trim_history(self, state: MessagesState) -> dict[str, list[RemoveMessage]]:
         messages = state["messages"]
@@ -206,7 +174,7 @@ class Brain:
         results: list[ToolMessage] = []
         for call in response.tool_calls:
             tool = self._tools[call["name"]]
-            result = await self._model_tools[tool.name].ainvoke(call["args"])
+            result = execute_tool(tool, call["args"])
             results.append(
                 ToolMessage(
                     content=result,
