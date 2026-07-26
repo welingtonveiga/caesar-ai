@@ -23,6 +23,7 @@ caesar = "caesar.cli:main"
 [dependency-groups]
 dev = [
     "pytest>=8.3",
+    "pytest-cov>=7.1.0",
     "ruff>=0.9",
 ]
 
@@ -35,6 +36,16 @@ module-name = "caesar"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = [
+    "--cov=caesar",
+    "--cov-branch",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 target-version = "py312"
